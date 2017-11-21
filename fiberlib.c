@@ -100,7 +100,7 @@ void fiber_init (long period)
 
 int fiber_create (fiber *thread, void *(*start_routine)(void *), void *arg)  
 {
-	thread->id = 1;
+	thread->id = counter;
 
 	if (getcontext(&(thread->uc)) == -1 ) 
 	{
@@ -148,3 +148,12 @@ void scheduler()
 	current = next;
 	}
 }
+
+/*
+int fiber_join(fiber_t fiber, void **retval)
+{
+	if(current->id==fiber.id){
+		return 1;
+	}
+
+*/
