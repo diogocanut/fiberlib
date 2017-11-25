@@ -1,39 +1,44 @@
 #include <ucontext.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include "fiberlib.h"
+#include <sys/types.h>
 #include <sys/time.h>
-#include <malloc.h>
+#include <string.h>
 #include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <poll.h>
+#include "fiberlib.h"
 
 
-/* aponta para a fiber em execução no momento */
+#define STACKSIZE 4096
+
+/* timers */
+sigset_t set; 
+ucontext_t signal_context; 
+void *signal_stack;
+struct itimerval it;
+
+/* contexts */
+int curcontext = 0;
+ucontext_t *cur_context; 
+int vet[10][1];
+
+/* fiber em execução */
 fiber *current;
 
-/* fiber da main */
+/* main fiber */
 fiber main_t;
 
-ucontext_t maincontext;
 
-/* contador de threads na lista */
+/* nodes list */
+node *head,*tail;
+
 int counter;
 
-/* cabeça e calda da lista de threads a serem executadas */
-node *head, *tail;
-
-/* aponta para a lista de fibers cuja execução foram finalizadas */
-node *finished;
-
-int cancel = 0;
-
-
-/* adiciona nó apontando para fiber no final da lista */
-int add_node(fiber *f, void *(*start_routine)(void *), void *arg)
+int add_node(fiber *f)
 {
 
-	/* return value da fiber recebe a função passada */
-	f->retval = start_routine(arg);
+
 
 	/* cria novo nó e atualiza a lista */
 	node *novo = (node *) malloc(sizeof(node));
@@ -56,192 +61,172 @@ int add_node(fiber *f, void *(*start_routine)(void *), void *arg)
 		tail = novo;
 	}
 
-	counter++;
 
 	return 1;
 
 }
-
-/* função chamada para adicionar uma nova fiber 
-no final da lista de terminadas */
-int add_finished(fiber *f)
-{
-	node *novo = (node *) malloc(sizeof(node));
-	novo->data = f;
-	novo->next = NULL;
-
-	if(novo == NULL)
-	{
-		return 0;
-	}
-
-	if(finished == NULL)
-	{
-		finished = novo;
-		return 0;
-	}
-
-
-	node *buff = finished;
-	while(buff->next!=NULL)
-	{
-		buff = buff->next;
-
-	}
-
-	buff->next = novo;
-	return 0;
-
-
-}
-
-
-/* inicializa as fibers */
-void fiber_init(long period) 
-{
-
-	/* atualiza os ponteiros das listas */
-
-	head = tail = finished = NULL;
-
-
-	/* a fiber da main recebe id -1 */
-	main_t.id = -1;
-	
-	/* salva o contexto da fiber main que está em execução */
-	if (getcontext(&(main_t.uc)) == -1) 
-	{
-		printf("Erro na fiber_init main context\n");
-		exit(1);
-	}	
-	
-	/* variável current aponta para main */
-	current = &main_t; 
-
-}
-
-
-
-int fiber_create (fiber *thread, void *(*start_routine)(void *), void *arg)  
-{
-
-	/* o id da fiber recebe seu id de acordo com o contador */
-	thread->id = counter;
-
-	/* salva o context da thread em execução */
-	if (getcontext(&(thread->uc)) == -1 ) 
-	{
-		printf("Erro getcontext fiber create\n");
-		exit(1);
-	}
-
-	thread->uc.uc_link = &maincontext;
-	thread->uc.uc_stack.ss_sp = malloc(SIGSTKSZ);
-	thread->uc.uc_stack.ss_size = SIGSTKSZ;
-
-	/* adiciona a fiber na lista e linca um node novo a ela */
-
-	add_node(&thread,start_routine,arg);
-
-	/* executa o scheduler */
-
-	makecontext(&thread->uc,(void (*) ()) scheduler, 0);
-
-
-	return 0;
-
-}
-
 
 void scheduler()
 {
 
-	/* escalonador pega o primeiro elemento da lista de fibers e o coloca
-	em execução */
-	fiber *prev = NULL;
 	fiber *next = NULL;
-
-
-	prev = current;
-
-	/* TESTE PREV DE UC */
-	if(getcontext(&maincontext) == -1) 
-	{
-		printf("erro no scheduler get maincontext\n");
-		exit(1);
-	}
 
 	if(head==NULL)
 	{
 	/* se a lista estiver vazia volta para o contexto da main */	
-		if(swapcontext(&current->uc, &main_t.uc) == -1)
-		{
-			printf("erro maincontext fiber create\n");
-			exit(1);
-		}
-
 		return;
 	}
-	
-	next = head->data;	
+
+
+	next = head->data;
 	head = head->next;
-
-
 	current = next;
+	add_node(current);
+	cur_context = &next->uc;
 
 
-	/* troca o contexto para a proxima fiber da lista */
-
-    if(swapcontext(&(prev->uc), &(next->uc)) == -1 ) 
-    {
-		printf("Error while swap context\n"); 
-	}
-
-
-	/* adiciona a fiber que estava em execução a lista de terminadas */
-	add_finished(&prev);
+	setcontext(&next->uc);
 
 }
 
 
-int fiber_join(fiber *f, void **retval)
+void timer_interrupt(int j, siginfo_t *si, void *old_context)
 {
 
-	/* retorna 0 e o retval de uma fiber ja finalizada 
-	caso se encontre na lista de finalizadas, caso contrario
-	retorna -1 */ 
-	if(current->id==f->id)
-	{
-		return 1;
-	}
-	if(finished==NULL)
-	{
-		return 1;
-	}
-	else
-	{
-		node *buff = finished;
-		while(buff!=NULL)
-		{
-			if(buff->data->id==f->id)
-			{
-				*retval=f->retval;
-				return 0;
-			}
+	getcontext(&signal_context);
+	signal_context.uc_stack.ss_sp = signal_stack;
+	signal_context.uc_stack.ss_size = STACKSIZE;
+	signal_context.uc_stack.ss_flags = 0;
+	sigemptyset(&signal_context.uc_sigmask);
+	makecontext(&signal_context, scheduler, 1);
 
-			buff = buff->next;
 
-		}
 
-	}
-
-	return 1;
+	swapcontext(cur_context,&signal_context);
 }
 
-void fiber_exit(void *retval) 
+
+void setup_signals(void)
 {
-	/* retorna o retval da fiber em execução e a finaliza */
-	retval = current->retval;
-	add_finished(current);
+	struct sigaction act;
+	act.sa_sigaction = timer_interrupt;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = SA_RESTART | SA_SIGINFO;
+	sigemptyset(&set);
+	sigaddset(&set, SIGALRM);
+	if(sigaction(SIGALRM, &act, NULL) != 0) 
+	{
+		perror("Signal handler");
+	}
+}
+
+/* Thread bodies */
+void* thread1()
+{
+	while(1) {
+			printf("Entrou na Funcao Thread 1\n"); 
+		    printf("Entrou na Funcao Thread 1 I=%d\n", vet[curcontext][0]++);
+		    sleep(1);
+		 } 
+}
+
+
+void* thread2()
+{
+	int i;
+	while(1) {
+		    printf("Entrou na Funcao Thread 2\n"); 
+		    printf("Entrou na Funcao Thread 2 I=%d\n", vet[curcontext][1]++);
+  	        sleep(1); 
+		 }; 
+}
+
+
+
+void
+mkcontext(ucontext_t *uc, void *function)
+{
+	void * stack;
+	getcontext(uc);
+	stack = malloc(STACKSIZE);
+	if (stack == NULL) {
+		perror("malloc");
+	exit(1);
+	}
+
+
+	uc->uc_stack.ss_sp = stack;
+	uc->uc_stack.ss_size = STACKSIZE;
+	uc->uc_stack.ss_flags = 0;
+	if (sigemptyset(&uc->uc_sigmask) < 0){
+		perror("sigemptyset");
+	exit(1);
+	}
+
+
+	makecontext(uc, function, 1);
+	printf("context is %p\n", uc);
+}
+
+int fiber_create(fiber *thread, void *(*start_routine)(void *), void *arg)  
+{
+
+
+	/* o id da fiber recebe seu id de acordo com o contador */
+	thread->id = counter;
+
+
+	/* adiciona a fiber na lista e linca um node novo a ela */
+
+	add_node(thread);
+
+	/* executa o scheduler */
+
+	mkcontext(&thread->uc,start_routine);
+
+
+
+	return 0;
+
+}
+
+void fiber_init(long period) 
+{
+
+	signal_stack = malloc(STACKSIZE);
+	if (signal_stack == NULL) {
+		perror("malloc");
+	exit(1);
+	}
+
+	memset(vet,0,10*1*sizeof(int));
+
+	setup_signals();
+
+	/* timer */
+	it.it_interval.tv_sec = period;
+	it.it_interval.tv_usec = 0;
+	it.it_value = it.it_interval;
+	if (setitimer(ITIMER_REAL, &it, NULL) ) perror("setitiimer");
+
+	/*salvando contexto da main*/
+	main_t.id = -1;
+	if ( getcontext(&(main_t.uc)) == -1) {
+		printf("Error while getting context...exiting\n");
+		exit(1);
+	}	
+	current = &main_t; 
+
+}
+
+void
+main()
+{
+
+	fiber_init(4);	
+	fiber t1,t2;
+	fiber_create(&t1,thread1,0);
+	fiber_create(&t2,thread2,0);
 	scheduler();
+
 }

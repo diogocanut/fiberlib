@@ -1,5 +1,3 @@
-#include <ucontext.h>
-
 typedef struct 
 {
 	int id;
@@ -14,16 +12,11 @@ typedef struct node
 } node;
 
 
-int add_node(fiber *f, void *(*start_routine)(void *), void *arg);
 
-void fiber_init (long period);
-
-int fiber_create (fiber *thread, void *(*start_routine)(void *), void *arg);
-
-void fiber_run (void* (*start_routine)(void*), void* arg);
-
-void scheduler();
+void timer_interrupt(int j, siginfo_t *si, void *old_context);
+void setup_signals(void);
 
 int add_finished(fiber *f);
-
-void fiber_exit(void *retval);
+void mkcontext(ucontext_t *uc, void *function);
+void fiber_init(long period);
+int fiber_create(fiber *thread, void *(*start_routine)(void *), void *arg);
