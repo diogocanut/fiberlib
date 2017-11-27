@@ -123,22 +123,22 @@ void setup_signals(void)
 /* Thread bodies */
 void* thread1()
 {
-	while(1) {
+
 			printf("Entrou na Funcao Thread 1\n"); 
 		    printf("Entrou na Funcao Thread 1 I=%d\n", vet[curcontext][0]++);
 		    sleep(1);
-		 } 
+
 }
 
 
 void* thread2()
 {
-	int i;
-	while(1) {
+
+
 		    printf("Entrou na Funcao Thread 2\n"); 
 		    printf("Entrou na Funcao Thread 2 I=%d\n", vet[curcontext][1]++);
   	        sleep(1); 
-		 }; 
+ 
 }
 
 
@@ -223,7 +223,7 @@ void
 main()
 {
 
-	fiber_init(4);	
+	fiber_init(1);	
 	fiber t1,t2;
 	fiber_create(&t1,thread1,0);
 	fiber_create(&t2,thread2,0);
