@@ -19,9 +19,8 @@ void *signal_stack;
 struct itimerval it;
 
 /* contexts */
-int curcontext = 0;
 ucontext_t *cur_context; 
-int vet[10][1];
+
 
 /* fiber em execução */
 fiber *current;
@@ -34,6 +33,8 @@ fiber main_t;
 node *head,*tail;
 
 int counter;
+
+int cancel=0;
 
 int add_node(fiber *f)
 {
@@ -66,6 +67,65 @@ int add_node(fiber *f)
 
 }
 
+int rm_node(fiber *f)
+{
+
+	if(head==NULL){
+		return 0;
+	}
+
+	node *prev = NULL;
+	node *buff = head;
+
+	while(buff!=NULL&&buff->data!=f){
+		prev = buff;
+		buff = buff->next;
+	}
+
+	if(buff->data==f){
+		if(head==buff){
+			head = head->next;
+		}
+		if(tail==buff){
+			tail = prev;
+		}
+		if(prev!=NULL){
+		prev->next = buff->next;
+	}
+		free(buff);
+		return 1;
+	}
+
+	return 0;
+}
+
+int exists_node(fiber *f)
+{
+	int x = 0;
+	node *buff = head;
+
+	if(head==NULL){
+		return 0;
+	}
+
+	while(buff->next!=NULL){
+
+		if(buff->data->id==f->id){
+			x = 1;
+		}
+	
+		buff = buff->next;
+
+	}
+
+	if(x==0){
+		return 0;
+	}
+	else return 1;
+
+}
+
+
 void scheduler()
 {
 
@@ -77,11 +137,18 @@ void scheduler()
 		return;
 	}
 
+	if(cancel!=1){
+		add_node(current);
+	}
+
+	while(head->data->id == -1){
+		head = head->next;
+	}
 
 	next = head->data;
 	head = head->next;
 	current = next;
-	add_node(current);
+
 	cur_context = &next->uc;
 
 
@@ -120,31 +187,8 @@ void setup_signals(void)
 	}
 }
 
-/* Thread bodies */
-void* thread1()
-{
 
-			printf("Entrou na Funcao Thread 1\n"); 
-		    printf("Entrou na Funcao Thread 1 I=%d\n", vet[curcontext][0]++);
-		    sleep(1);
-
-}
-
-
-void* thread2()
-{
-
-
-		    printf("Entrou na Funcao Thread 2\n"); 
-		    printf("Entrou na Funcao Thread 2 I=%d\n", vet[curcontext][1]++);
-  	        sleep(1); 
- 
-}
-
-
-
-void
-mkcontext(ucontext_t *uc, void *function)
+void mkcontext(ucontext_t *uc, void *function)
 {
 	void * stack;
 	getcontext(uc);
@@ -168,6 +212,7 @@ mkcontext(ucontext_t *uc, void *function)
 	printf("context is %p\n", uc);
 }
 
+
 int fiber_create(fiber *thread, void *(*start_routine)(void *), void *arg)  
 {
 
@@ -185,10 +230,10 @@ int fiber_create(fiber *thread, void *(*start_routine)(void *), void *arg)
 	mkcontext(&thread->uc,start_routine);
 
 
-
 	return 0;
 
 }
+
 
 void fiber_init(long period) 
 {
@@ -199,7 +244,7 @@ void fiber_init(long period)
 	exit(1);
 	}
 
-	memset(vet,0,10*1*sizeof(int));
+	
 
 	setup_signals();
 
@@ -210,23 +255,34 @@ void fiber_init(long period)
 	if (setitimer(ITIMER_REAL, &it, NULL) ) perror("setitiimer");
 
 	/*salvando contexto da main*/
-	main_t.id = -1;
+	main_t.id = 666;
 	if ( getcontext(&(main_t.uc)) == -1) {
-		printf("Error while getting context...exiting\n");
+		printf("erro no contexto da main\n");
 		exit(1);
 	}	
 	current = &main_t; 
 
 }
 
-void
-main()
+
+int fiber_join(fiber *f, void **status)
 {
 
-	fiber_init(1);	
-	fiber t1,t2;
-	fiber_create(&t1,thread1,0);
-	fiber_create(&t2,thread2,0);
+	main_t.id = -1;
+
+	while(exists_node(f)){
+		scheduler();
+	}
+
+	main_t.id = 666;
+
+}
+
+void fiber_exit(void *retval)
+{
+	current->retval = retval;
+	cancel = 1;
 	scheduler();
+	cancel = 0;
 
 }
