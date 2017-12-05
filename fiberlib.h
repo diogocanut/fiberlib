@@ -14,6 +14,7 @@ typedef struct
 	int id;
 	ucontext_t uc;
 	void *retval;
+	int cancel;
 } fiber;
 
 typedef struct node 

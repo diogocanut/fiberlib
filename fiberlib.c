@@ -76,28 +76,27 @@ int rm_node(fiber *f)
 
 	node *prev = NULL;
 	node *buff = head;
-
-	while(buff!=NULL&&buff->data!=f){
+	printf("oiaaa\n");
+	while(buff!=NULL&&buff->data->id!=f->id){
 		prev = buff;
 		buff = buff->next;
 	}
 
-	if(buff->data==f){
-		if(head==buff){
-			head = head->next;
-		}
-		if(tail==buff){
+	if(buff->data->id==f->id){
+		if(buff->data->id==tail->data->id){
+			buff->next = NULL;
 			tail = prev;
-		}
-		if(prev!=NULL){
-		prev->next = buff->next;
-	}
+		}else{
+			prev->next = buff->next;
+			}
+			
 		free(buff);
 		return 1;
 	}
 
 	return 0;
 }
+
 
 int exists_node(fiber *f)
 {
@@ -131,23 +130,38 @@ void scheduler()
 
 	fiber *next = NULL;
 
+
+	if(current->cancel==1){
+		/*rm_node(current); */
+
+	}
+	else{
+		
+		if(current->id!=-1){
+			add_node(current);
+
+		}
+	}
+
 	if(head==NULL)
 	{
 	/* se a lista estiver vazia volta para o contexto da main */	
 		return;
 	}
 
-	if(cancel!=1){
-		add_node(current);
-	}
 
-	while(head->data->id == -1){
-		head = head->next;
-	}
 
 	next = head->data;
-	head = head->next;
+	
+
+	/*if(head->data->id == -1 && head->next!=NULL){
+		head = head->next;
+	}*/
+
+	head = head->next;	
 	current = next;
+
+
 
 	cur_context = &next->uc;
 
@@ -255,7 +269,7 @@ void fiber_init(long period)
 	if (setitimer(ITIMER_REAL, &it, NULL) ) perror("setitiimer");
 
 	/*salvando contexto da main*/
-	main_t.id = 666;
+	main_t.id = -1;
 	if ( getcontext(&(main_t.uc)) == -1) {
 		printf("erro no contexto da main\n");
 		exit(1);
@@ -268,21 +282,20 @@ void fiber_init(long period)
 int fiber_join(fiber *f, void **status)
 {
 
-	main_t.id = -1;
+	main_t.id = -1; 
 
 	while(exists_node(f)){
 		scheduler();
 	}
 
-	main_t.id = 666;
+	 main_t.id = 666; 
 
 }
 
 void fiber_exit(void *retval)
 {
 	current->retval = retval;
-	cancel = 1;
+	current->cancel = 1;
 	scheduler();
-	cancel = 0;
 
 }
