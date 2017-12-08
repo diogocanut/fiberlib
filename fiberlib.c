@@ -269,7 +269,7 @@ void fiber_init(long period)
 	if (setitimer(ITIMER_REAL, &it, NULL) ) perror("setitiimer");
 
 	/*salvando contexto da main*/
-	main_t.id = -1;
+	main_t.id = 666;
 	if ( getcontext(&(main_t.uc)) == -1) {
 		printf("erro no contexto da main\n");
 		exit(1);
@@ -282,13 +282,13 @@ void fiber_init(long period)
 int fiber_join(fiber *f, void **status)
 {
 
-	main_t.id = -1; 
+
 
 	while(exists_node(f)){
 		scheduler();
 	}
 
-	 main_t.id = 666; 
+
 
 }
 
